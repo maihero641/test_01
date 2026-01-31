@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>스네이크 게임 (단일 HTML)</title>
+  <style>
+    :root {
+      --bg1: #0f172a; /* 배경 그라데이션 */
+      --bg2: #111827;
+      --panel: #0b1220;
+      --grid: #1f2937;
+      --snake-head: #22d3ee;
+      --snake-body: #06b6d4;
+      --apple: #ef4444;
+      --text: #e5e7eb;
+      --subtext: #9ca3af;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: radial-gradient(1200px 800px at 30% 20%, var(--bg2), var(--bg1));
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", "Apple SD Gothic Neo", sans-serif;
+      overscroll-behavior: none;
+    }
+    .wrap {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .game-panel {
+      display: grid;
+      gap: 14px;
+      background: color-mix(in hsl, var(--panel) 90%, black 10%);
+      border: 1px solid #0b2440;
+      border-radius: 16px;
+      padding: 16px;
+      width: min(92vmin, 560px);
+      box-shadow: 0 10px 30px rgba(0,0,0,.35), inset 0 0 1px rgba(255,255,255,.05);
+    }
+    .hud {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .title {
+      font-weight: 700;
+      letter-spacing: .3px;
+      color: var(--accent);
+      text-shadow: 0 0 10px rgba(56,189,248,0.2);
+    }
+    .scores {
+      display: flex;
+      gap: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      background: #0a152a;
+      border: 1px solid #143257;
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 14px;
+    }
+    .badge small {
+      color: var(--subtext);
+    }
+    .canvas-wrap {
+      position: relative;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid #17304f;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      image-rendering: pixelated;      /* 픽셀 느낌 유지 */
+      background: #0a1322;
+    }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(180deg, rgba(2,6,23,0.35), rgba(2,6,23,0.65));
+      backdrop-filter: blur(2px);
+      color: var(--text);
+      text-align: center;
+      padding: 16px;
+      gap: 8px;
+    }
+    .overlay h2 {
+      margin: 0 0 4px;
+      font-size: 22px;
+    }
+    .overlay p { margin: 2px 0; color: var(--subtext); }
+    .helper {
+      font-size: 13px;
+      color: var(--subtext);
+      line-height: 1.45;
+    }
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #a3e1ff;
+      opacity: .9;
+    }
+    .footer {
+      font-size: 12px;
+      color: var(--subtext);
+      text-align: center;
+    }
+    .footer kbd {
+      background: #0b1b33;
+      border: 1px solid #15345b;
+      border-bottom-color: #0b1f3a;
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-weight: 600;
+      color: #e6f3ff;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="game-panel">
+      <div class="hud">
+        <div class="title">🐍 스네이크</div>
+        <div class="scores">
+          <div class="badge"><small>점수</small> <strong id="score">0</strong></div>
+          <div class="badge"><small>최고</small> <strong id="high">0</strong></div>
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <!-- 논리 해상도는 고정, 화면에 맞춰 비율 유지 -->
+        <canvas id="board" width="480" height="480" aria-label="스네이크 보드"></canvas>
+
+        <!-- 게임 시작 안내 오버레이 (처음 표시) -->
+        <div class="overlay" id="startOverlay">
+          <div>
+            <h2>화살표 키로 이동!</h2>
+            <p>벽이나 자기 몸에 부딪히면 게임 오버입니다.</p>
+            <div class="helper">
+              <div>🍎 사과를 먹으면 길어지고 점수가 올라요.</div>
+              <div>⏸ <kbd>Space</kbd> 일시정지 / 🔁 <kbd>Enter</kbd> 재시작</div>
+            </div>
+            <div class="hint">아무 방향키를 눌러 시작</div>
+          </div>
+        </div>
+
+        <!-- 일시정지/게임오버 오버레이 (동적 표시) -->
+        <div class="overlay" id="statusOverlay" style="display:none;">
+          <div>
+            <h2 id="statusTitle">일시정지</h2>
+            <p id="statusDesc">계속하려면 <kbd>Space</kbd> 를 누르세요.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        조작: <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> &nbsp;·&nbsp; 일시정지: <kbd>Space</kbd> · 재시작: <kbd>Enter</kbd>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ====== 기본 설정 ======
+    const CELL = 24;           // 셀 크기(px)
+    const COLS = 20;           // 가로 셀 수
+    const ROWS = 20;           // 세로 셀 수
+    const WIDTH = CELL * COLS; // 캔버스 논리 폭
+    const HEIGHT = CELL * ROWS;// 캔버스 논리 높이
+
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    const highEl = document.getElementById('high');
+    const startOverlay = document.getElementById('startOverlay');
+    const statusOverlay = document.getElementById('statusOverlay');
+    const statusTitle = document.getElementById('statusTitle');
+    const statusDesc = document.getElementById('statusDesc');
+
+    // 캔버스 논리 크기 유지 (CSS로 반응형 스케일)
+    canvas.width = WIDTH;
+    canvas.height = HEIGHT;
+
+    // ====== 게임 상태 ======
+    let snake;              // [{x,y}, ...] 머리 -> 꼬리
+    let dir;                // 현재 방향 {x,y}
+    let nextDir;            // 다음 프레임에 반영할 방향
+    let apple;              // {x,y}
+    let score;              // 현재 점수
+    let highScore;          // 최고 점수 (localStorage)
+    let running = false;    // 시작 여부
+    let paused = false;     // 일시정지
+    let gameOver = false;   // 게임오버
+    let lastTime = 0;       // 이전 프레임 타임스탬프
+    let acc = 0;            // 누적 시간 (ms)
+    let tickMs = 120;       // 한 칸 이동 주기(ms)
+    const minTick = 60;     // 최고 속도 한계(ms)
+    const speedUp = 0.97;   // 사과 먹을 때마다 속도 증가 계수
+
+    // ====== 초기화 / 재시작 ======
+    function resetGame() {
+      // 초기 뱀 (길이 3)
+      const startX = Math.floor(COLS / 2);
+      const startY = Math.floor(ROWS / 2);
+      snake = [
+        { x: startX, y: startY },
+        { x: startX - 1, y: startY },
+        { x: startX - 2, y: startY },
+      ];
+      dir = { x: 1, y: 0 };
+      nextDir = { ...dir };
+      score = 0;
+      scoreEl.textContent = score;
+      gameOver = false;
+      paused = false;
+      acc = 0;
+      tickMs = 120; // 초기 속도
+      spawnApple();
+
+      // 오버레이 처리
+      startOverlay.style.display = running ? 'none' : '';
+      statusOverlay.style.display = 'none';
+      draw(); // 초기 화면
+    }
+
+    // ====== 사과 생성 (뱀과 겹치지 않게) ======
+    function spawnApple() {
+      while (true) {
+        const x = Math.floor(Math.random() * COLS);
+        const y = Math.floor(Math.random() * ROWS);
+        const conflict = snake.some(seg => seg.x === x && seg.y === y);
+        if (!conflict) {
+          apple = { x, y };
+          return;
+        }
+      }
+    }
+
+    // ====== 메인 루프 ======
+    function loop(timestamp) {
+      if (!running) return; // 시작 전에는 루프 정지
+
+      const dt = Math.min(32, timestamp - lastTime); // 프레임 변동 억제
+      lastTime = timestamp;
+
+      if (!paused && !gameOver) {
+        acc += dt;
+        while (acc >= tickMs) {
+          acc -= tickMs;
+          step();
+        }
+      }
+
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    // ====== 한 틱 진행 ======
+    function step() {
+      // 방향 반영 (틱당 1회만 변경되도록)
+      dir = nextDir;
+
+      // 새 머리 위치
+      const head = snake[0];
+      const newHead = { x: head.x + dir.x, y: head.y + dir.y };
+
+      // 벽 충돌 검사 (wrap을 원하면 여기 로직 바꾸면 됨)
+      if (newHead.x < 0 || newHead.y < 0 || newHead.x >= COLS || newHead.y >= ROWS) {
+        return endGame();
+      }
+
+      // 자기 몸 충돌 검사 (새 머리가 몸과 겹치는지)
+      if (snake.some(seg => seg.x === newHead.x && seg.y === newHead.y)) {
+        return endGame();
+      }
+
+      // 이동
+      snake.unshift(newHead);
+
+      // 사과 먹었는지 확인
+      if (newHead.x === apple.x && newHead.y === apple.y) {
+        score += 10;
+        scoreEl.textContent = score;
+        spawnApple();
+        // 속도 상승 (최소 한계 유지)
+        tickMs = Math.max(minTick, Math.floor(tickMs * speedUp));
+      } else {
+        // 사과를 먹지 않았으면 꼬리 제거
+        snake.pop();
+      }
+    }
+
+    function endGame() {
+      gameOver = true;
+      paused = false;
+      updateHighScore();
+      showStatus('게임 오버', '다시 시작하려면 Enter 키를 누르세요.');
+    }
+
+    // ====== 그리기 ======
+    function draw() {
+      // 배경
+      ctx.fillStyle = '#071124';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // 보드 그리드
+      drawGrid();
+
+      // 사과
+      drawApple(apple.x, apple.y);
+
+      // 뱀 (머리 강조)
+      drawSnake();
+
+      // 상태 오버레이는 DOM 요소로 처리
+    }
+
+    function drawGrid() {
+      ctx.save();
+      ctx.strokeStyle = '#10213d';
+      ctx.lineWidth = 1;
+
+      // 얇은 라인
+      ctx.globalAlpha = 0.35;
+      for (let x = 1; x < COLS; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * CELL + 0.5, 0);
+        ctx.lineTo(x * CELL + 0.5, HEIGHT);
+        ctx.stroke();
+      }
+      for (let y = 1; y < ROWS; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * CELL + 0.5);
+        ctx.lineTo(WIDTH, y * CELL + 0.5);
+        ctx.stroke();
+      }
+
+      // 외곽선
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#143257';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, WIDTH - 2, HEIGHT - 2);
+      ctx.restore();
+    }
+
+    function drawApple(x, y) {
+      const px = x * CELL;
+      const py = y * CELL;
+      ctx.save();
+      // 본체
+      ctx.fillStyle = '#ef4444';
+      const pad = 3;
+      ctx.fillRect(px + pad, py + pad, CELL - pad * 2, CELL - pad * 2);
+      // 하이라이트
+      ctx.fillStyle = 'rgba(255,255,255,.15)';
+      ctx.fillRect(px + pad + 2, py + pad + 2, CELL - pad * 2 - 8, 6);
+      // 잎사귀
+      ctx.fillStyle = '#22c55e';
+      ctx.fillRect(px + CELL / 2 - 2, py + pad - 2, 6, 6);
+      ctx.restore();
+    }
+
+    function drawSnake() {
+      for (let i = 0; i < snake.length; i++) {
+        const seg = snake[i];
+        const px = seg.x * CELL;
+        const py = seg.y * CELL;
+
+        if (i === 0) {
+          // 머리
+          const grad = ctx.createLinearGradient(px, py, px + CELL, py + CELL);
+          grad.addColorStop(0, '#22d3ee');
+          grad.addColorStop(1, '#06b6d4');
+          ctx.fillStyle = grad;
+          roundRect(ctx, px + 2, py + 2, CELL - 4, CELL - 4, 6, true);
+        } else {
+          // 몸통
+          ctx.fillStyle = '#0ea5b0';
+          roundRect(ctx, px + 3, py + 3, CELL - 6, CELL - 6, 5, true);
+        }
+      }
+    }
+
+    // 둥근 사각형 유틸
+    function roundRect(ctx, x, y, w, h, r, fill, stroke) {
+      const min = Math.min(w, h) / 2;
+      if (r > min) r = min;
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      if (fill) ctx.fill();
+      if (stroke) ctx.stroke();
+    }
+
+    // ====== 입력 처리 ======
+    // 브라우저 스크롤 방지 (화살표/스페이스/엔터)
+    window.addEventListener('keydown', (e) => {
+      const keysToBlock = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ' , 'Enter'];
+      if (keysToBlock.includes(e.key)) e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('keydown', (e) => {
+      const k = e.key;
+
+      // 시작 전: 방향키 누르면 게임 시작
+      if (!running) {
+        if (k.startsWith('Arrow')) {
+          running = true;
+          startOverlay.style.display = 'none';
+          lastTime = performance.now();
+          requestAnimationFrame(loop);
+        } else {
+          return;
+        }
+      }
+
+      // 게임오버 상태에서 Enter로 재시작
+      if (gameOver) {
+        if (k === 'Enter') {
+          resetGame();
+        }
+        return;
+      }
+
+      // 일시정지 토글
+      if (k === ' ') {
+        paused = !paused;
+        if (paused) {
+          showStatus('일시정지', '계속하려면 Space 키를 누르세요.');
+        } else {
+          hideStatus();
+        }
+        return;
+      }
+
+      // 진행 중 방향 전환
+      const d = getDirFromKey(k);
+      if (!d) return;
+
+      // 역방향 금지 (즉시 유턴 방지)
+      if (d.x + dir.x === 0 && d.y + dir.y === 0) return;
+
+      // 같은 틱에 여러 번 꺾기 방지: nextDir 기준으로도 역방향 확인
+      if (d.x + nextDir.x === 0 && d.y + nextDir.y === 0) return;
+
+      nextDir = d;
+      // 첫 입력 시 오버레이 숨기기
+      hideStatus();
+    });
+
+    function getDirFromKey(k) {
+      switch (k) {
+        case 'ArrowUp':    return { x: 0, y: -1 };
+        case 'ArrowDown':  return { x: 0, y:  1 };
+        case 'ArrowLeft':  return { x: -1, y: 0 };
+        case 'ArrowRight': return { x:  1, y: 0 };
+        default: return null;
+      }
+    }
+
+    // ====== 점수 저장 ======
+    function updateHighScore() {
+      highScore = Math.max(highScore || 0, score);
+      localStorage.setItem('snake_high_score', String(highScore));
+      highEl.textContent = highScore;
+    }
+
+    // ====== 상태 오버레이 표시/숨김 ======
+    function showStatus(title, desc) {
+      statusTitle.textContent = title;
+      statusDesc.innerHTML = desc.replace('Enter', '<kbd>Enter</kbd>').replace('Space', '<kbd>Space</kbd>');
+      statusOverlay.style.display = '';
+    }
+    function hideStatus() {
+      statusOverlay.style.display = 'none';
+    }
+
+    // ====== 시작 준비 ======
+    highScore = Number(localStorage.getItem('snake_high_score') || 0);
+    highEl.textContent = highScore;
+    resetGame(); // 내부에서 draw 호출
+
+    // 포커스 이탈/복귀 시 자동 일시정지 (오동작 방지)
+    window.addEventListener('blur', () => {
+      if (running && !gameOver) {
+        paused = true;
+        showStatus('일시정지', '창을 벗어나 일시정지 되었습니다. 계속하려면 <kbd>Space</kbd>.');
+      }
+    });
+    window.addEventListener('focus', () => {
+      // 사용자가 명시적으로 풀도록 유지
+    });
+  </script>
+</body>
+</html>
